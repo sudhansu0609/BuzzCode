@@ -1,0 +1,1 @@
+This crate does not compile (`cargo test`). Fix the compile error in src/lib.rs with a minimal change that keeps the public API (`in_stock` must still return `Vec<&str>`), then run `cargo test` to confirm it passes.

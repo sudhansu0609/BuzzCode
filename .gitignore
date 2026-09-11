@@ -1,0 +1,6 @@
+/target
+/.buzzcode
+*.gguf
+*.log
+/.vs
+/eval/**/repo-tmp

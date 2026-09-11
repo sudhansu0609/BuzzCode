@@ -1,0 +1,9 @@
+[package]
+name = "mathlib"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+# keep the fixture standalone even when nested inside another cargo workspace
+[workspace]

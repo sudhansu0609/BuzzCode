@@ -1,0 +1,28 @@
+[package]
+name = "cb-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+cb-config.workspace = true
+cb-tool-api.workspace = true
+cb-engine.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+schemars.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+blake3.workspace = true
+regex.workspace = true
+lru.workspace = true
+parking_lot.workspace = true
+indexmap.workspace = true
+nucleo-matcher.workspace = true
+async-trait.workspace = true
+uuid.workspace = true

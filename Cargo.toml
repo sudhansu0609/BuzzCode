@@ -1,0 +1,111 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/buzzcode",
+    "crates/cb-config",
+    "crates/cb-tool-api",
+    "crates/cb-engine",
+    "crates/cb-core",
+    "crates/cb-tools",
+    "crates/cb-tui",
+    "crates/cb-codeintel",
+    "crates/cb-mcp",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+license = "MIT"
+repository = "https://github.com/buzzcaf/buzzcode"
+
+[workspace.dependencies]
+# internal
+cb-config = { path = "crates/cb-config" }
+cb-tool-api = { path = "crates/cb-tool-api" }
+cb-engine = { path = "crates/cb-engine" }
+cb-core = { path = "crates/cb-core" }
+cb-tools = { path = "crates/cb-tools" }
+cb-codeintel = { path = "crates/cb-codeintel" }
+cb-mcp = { path = "crates/cb-mcp" }
+cb-tui = { path = "crates/cb-tui" }
+cb-bench = { path = "crates/cb-bench" }
+
+# async / io
+tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "process", "fs", "sync", "time", "signal", "io-util"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+futures = "0.3"
+bytes = "1"
+async-trait = "0.1"
+
+# http
+reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "rustls", "charset", "http2"] }
+eventsource-stream = "0.2"
+url = "2"
+
+# serde
+serde = { version = "1", features = ["derive", "rc"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+toml = "1"
+schemars = { version = "1", features = ["preserve_order"] }
+postcard = { version = "1", features = ["alloc"] }
+
+# cli / tui
+clap = { version = "4", features = ["derive", "env"] }
+ratatui = "0.30"
+crossterm = { version = "0.29", features = ["event-stream"] }
+tui-textarea = "0.7"
+
+# code intel
+tree-sitter = "0.26"
+tree-sitter-rust = "0.24"
+tree-sitter-python = "0.25"
+tree-sitter-typescript = "0.23"
+tree-sitter-javascript = "0.25"
+tree-sitter-go = "0.25"
+tree-sitter-c = "0.24"
+tree-sitter-cpp = "0.23"
+tree-sitter-java = "0.23"
+tree-sitter-json = "0.24"
+tree-sitter-toml-ng = "0.7"
+tree-sitter-md = "0.5"
+redb = "4"
+nucleo-matcher = "0.3"
+ignore = "0.4"
+smol_str = { version = "0.3", features = ["serde"] }
+rayon = "1"
+
+# misc
+anyhow = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+tracing-appender = "0.2"
+blake3 = "1"
+sha2 = "0.11"
+similar = "3"
+regex = "1"
+lru = "0.18"
+directories = "6"
+indexmap = { version = "2", features = ["serde"] }
+parking_lot = "0.12"
+uuid = { version = "1", features = ["v4"] }
+humantime = "2"
+textwrap = "0.16"
+unicode-width = "0.2"
+rmcp = { version = "3", features = ["client", "transport-child-process"] }
+# Only used by cb-engine's sentinel tests, which stand up a real named pipe.
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Pipes"] }
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+opt-level = 3
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 2
