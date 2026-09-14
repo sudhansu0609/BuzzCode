@@ -446,6 +446,8 @@ impl App {
             Overlay::None => {}
         }
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        let shift = key.modifiers.contains(KeyModifiers::SHIFT);
+        let alt = key.modifiers.contains(KeyModifiers::ALT);
         match key.code {
             KeyCode::Char('c') if ctrl => {
                 if self.busy { self.handle.abort(); self.flash("aborting…"); self.last_ctrl_c = Some(Instant::now()); return; }
@@ -457,12 +459,39 @@ impl App {
             KeyCode::F(1) => self.overlay = Overlay::Help,
             KeyCode::F(2) => self.overlay = Overlay::EngineLog,
             KeyCode::F(3) => self.show_factory = !self.show_factory,
-            KeyCode::Enter if key.modifiers.contains(KeyModifiers::SHIFT) || key.modifiers.contains(KeyModifiers::ALT) || key.modifiers.contains(KeyModifiers::CONTROL) => { self.input.newline(); }
+            KeyCode::Enter if shift || alt || ctrl => { self.input.newline(); }
             KeyCode::Char('\n') | KeyCode::Char('j') if ctrl => { self.input.newline(); }
             KeyCode::Enter => self.submit(),
-            KeyCode::PageUp => { self.follow = false; self.scroll_from_bottom += 10; }
-            KeyCode::PageDown => { self.scroll_from_bottom = self.scroll_from_bottom.saturating_sub(10); if self.scroll_from_bottom == 0 { self.follow = true; } }
-            KeyCode::End if ctrl => { self.scroll_from_bottom = 0; self.follow = true; }
+            KeyCode::Esc if self.scroll_from_bottom > 0 => {
+                self.scroll_from_bottom = 0;
+                self.follow = true;
+            }
+            KeyCode::PageUp => {
+                self.follow = false;
+                self.scroll_from_bottom = self.scroll_from_bottom.saturating_add(if shift || ctrl { 25 } else { 12 });
+            }
+            KeyCode::PageDown => {
+                self.scroll_from_bottom = self.scroll_from_bottom.saturating_sub(if shift || ctrl { 25 } else { 12 });
+                if self.scroll_from_bottom == 0 { self.follow = true; }
+            }
+            KeyCode::Home if ctrl || shift || self.busy => { self.scroll_from_bottom = usize::MAX / 2; self.follow = false; }
+            KeyCode::End if ctrl || shift || self.busy => { self.scroll_from_bottom = 0; self.follow = true; }
+            KeyCode::Up if ctrl || shift || alt || self.busy || (self.scroll_from_bottom > 0 && self.input.is_empty()) => {
+                self.follow = false;
+                self.scroll_from_bottom = self.scroll_from_bottom.saturating_add(3);
+            }
+            KeyCode::Down if ctrl || shift || alt || self.busy || (self.scroll_from_bottom > 0 && self.input.is_empty()) => {
+                self.scroll_from_bottom = self.scroll_from_bottom.saturating_sub(3);
+                if self.scroll_from_bottom == 0 { self.follow = true; }
+            }
+            KeyCode::Char('y') if ctrl => {
+                self.follow = false;
+                self.scroll_from_bottom = self.scroll_from_bottom.saturating_add(3);
+            }
+            KeyCode::Char('e') if ctrl => {
+                self.scroll_from_bottom = self.scroll_from_bottom.saturating_sub(3);
+                if self.scroll_from_bottom == 0 { self.follow = true; }
+            }
             KeyCode::Up if (self.input.is_empty() && !self.history.is_empty()) || self.history_pos.is_some() => {
                 if self.input.handle_key(key) { return; } // moved within multi-line text
                 let pos = match self.history_pos { None => self.history.len() - 1, Some(p) => p.saturating_sub(1) };

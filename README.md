@@ -41,7 +41,27 @@ cargo run --release -- -p "explain src/main.rs"     # headless
 cargo run --release -- --mode yolo --json -p "..."  # no prompts, JSON-lines events
 ```
 
-Install once with `cargo install --path crates/buzzcode`, then just `buzzcode`.
+Install once with `cargo install --path crates/buzzcode` (or run `./build.bat`), then just `buzzcode`.
+
+## Quick start (macOS)
+
+After cloning the repository on your Mac, run the automated setup script:
+
+```bash
+chmod +x setup-mac.sh
+./setup-mac.sh
+```
+
+This single command automatically:
+1. Verifies Xcode Command Line Tools and Homebrew.
+2. Installs `cmake`, `ninja`, `ripgrep`, and Apple Metal-accelerated `llama.cpp`.
+3. Compiles and installs `buzzcode` to `~/.cargo/bin/buzzcode`.
+4. Runs `buzzcode engine doctor` to validate your Mac's Apple Silicon GPU / Unified Memory setup.
+
+Once complete, launch BuzzCode anywhere with:
+```bash
+buzzcode
+```
 
 ## Commands
 

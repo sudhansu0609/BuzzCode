@@ -249,7 +249,8 @@ impl EngineManager {
         // Reuse a proven tuned plan only if it is at least as good as the fresh plan for the
         // current profile (so raising `ctx` in the profile or freeing VRAM takes effect).
         let mut plan = match tune::load(&self.cfg, &hash, &profile.name) {
-            Some(t) if t.successes > 0 && t.still_valid(gpu.mem.free_mib) && profile.ngl_auto()
+            Some(t) if t.successes > 0 && t.still_valid(gpu.mem.free_mib)
+                && (profile.ngl_auto() || profile.ngl_value() == Some(t.ngl))
                 && t.n_ctx >= fresh.n_ctx && t.ngl >= fresh.ngl && t.ffn_cpu_blocks <= fresh.ffn_cpu_blocks => {
                 tracing::info!("using tuned plan (ngl {}, ctx {})", t.ngl, t.n_ctx);
                 t.to_plan()
@@ -262,7 +263,13 @@ impl EngineManager {
         // the TUI — because they all come through here. An absent guardian, or
         // `--force`, returns a grant that books nothing.
         let mut grant = {
-            let vram_mib = plan.est_vram_bytes >> 20;
+            let measured = tune::load(&self.cfg, &hash, &profile.name)
+                .and_then(|t| t.measured_vram_mib)
+                .filter(|&m| m > 0 && plan.ngl <= 65);
+            let vram_mib = match measured {
+                Some(m) if (plan.est_vram_bytes >> 20) > m => m,
+                _ => plan.est_vram_bytes >> 20,
+            };
             let ram_mib = self.cfg.engine.cache_ram_mb as u64 + (plan.est_cpu_weight_bytes >> 20);
             crate::sentinel::gate_engine_start(vram_mib, ram_mib).map_err(anyhow::Error::new)?
         };
@@ -311,6 +318,20 @@ impl EngineManager {
                         continue;
                     }
                     let tail = self.log.snapshot().into_iter().rev().take(15).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join("\n");
+                    // If llama-server failed to start on this model (e.g. model architecture quirk),
+                    // check if a local Ollama server is running and can serve it directly.
+                    if !profile.alias.is_empty() {
+                        let ollama_client = crate::client::LlamaClient::with_api_key("http://127.0.0.1:11434/v1", None);
+                        if ollama_client.health().await.unwrap_or(false) {
+                            tracing::warn!("llama-server failed to load model; falling back to active Ollama service on port 11434");
+                            grant.release();
+                            let n_ctx = profile.ctx;
+                            let model_name = profile.request_model();
+                            *self.client.write() = ollama_client;
+                            self.set_state(EngineState::Ready { n_ctx, model: model_name });
+                            return Ok(());
+                        }
+                    }
                     self.set_state(EngineState::Crashed { attempts: attempt, reason: e.to_string() });
                     bail!("llama-server failed to become healthy: {e}\n--- last log lines ---\n{tail}");
                 }

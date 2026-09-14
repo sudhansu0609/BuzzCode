@@ -87,6 +87,7 @@ impl Config {
 pub struct General {
     pub default_profile: String,
     pub permission_mode: PermissionModeCfg,
+    /// Maximum turns per user request (0 = unlimited).
     pub max_turns: u32,
     pub log_level: String,
 }
@@ -96,7 +97,7 @@ impl Default for General {
         Self {
             default_profile: "qwen38-27b-fast".into(),
             permission_mode: PermissionModeCfg::Ask,
-            max_turns: 40,
+            max_turns: 0,
             log_level: "info".into(),
         }
     }
@@ -263,6 +264,15 @@ impl Profile {
                 name: "qwen38-27b-fast".into(),
                 model: "unsloth/Qwen3.8-27B-GGUF:Qwen3.8-27B-UD-IQ3_XXS.gguf".into(),
                 alias: "qwen3.8-27b".into(),
+                ctx: 61440,
+                ctx_min: 61440,
+                ngl: "auto".into(),
+                kv_type: "q8_0".into(),
+                flash_attn: true,
+                spec: "draft-mtp".into(),
+                spec_draft_n_max: 2,
+                no_mmap: true,
+                reasoning_format: "deepseek".into(),
                 ..Default::default()
             },
             Profile {
@@ -327,6 +337,7 @@ impl Profile {
         self.provider == Some(EngineProvider::External)
             || engine.provider == EngineProvider::External
             || self.name == "lmstudio"
+            || self.name == "ollama"
             || !self.endpoint.is_empty()
     }
 
@@ -334,8 +345,11 @@ impl Profile {
         if !self.endpoint.is_empty() {
             return self.endpoint.clone();
         }
-        if (self.name == "lmstudio" || self.provider == Some(EngineProvider::External)) && engine.external_url.is_empty() {
+        if (self.name == "lmstudio" || (self.provider == Some(EngineProvider::External) && self.alias.contains("lmstudio"))) && engine.external_url.is_empty() {
             return "http://127.0.0.1:1234/v1".to_string();
+        }
+        if (self.name == "ollama" || self.name.starts_with("ollama-") || self.provider == Some(EngineProvider::External)) && engine.external_url.is_empty() {
+            return "http://127.0.0.1:11434/v1".to_string();
         }
         engine.base_url()
     }
@@ -594,7 +608,7 @@ pub struct Tui {
     pub arcade_auto_open: bool,
 }
 impl Default for Tui {
-    fn default() -> Self { Self { show_reasoning: true, render_interval_ms: 33, max_transcript_blocks: 2000, show_factory: true, arcade_port: 8123, arcade_auto_open: true } }
+    fn default() -> Self { Self { show_reasoning: true, render_interval_ms: 33, max_transcript_blocks: 2000, show_factory: true, arcade_port: 8123, arcade_auto_open: false } }
 }
 
 // ---------------------------------------------------------------------------

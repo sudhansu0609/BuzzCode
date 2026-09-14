@@ -16,9 +16,23 @@ pub struct PromptEnv {
 
 impl PromptEnv {
     pub fn detect(project_dir: &Path, tool_names: Vec<String>, languages: Vec<String>, has_repo_map: bool) -> Self {
+        let os = if cfg!(windows) {
+            "Windows 11".into()
+        } else if cfg!(target_os = "macos") {
+            "macOS".into()
+        } else {
+            std::env::consts::OS.into()
+        };
+        let shell = if cfg!(windows) {
+            "PowerShell 5.1 (use PowerShell syntax; no && or ||, use ; to chain; no export, use $env:VAR='val')".into()
+        } else if cfg!(target_os = "macos") {
+            "zsh (use zsh syntax; use && or || to chain; export VAR='val')".into()
+        } else {
+            "bash (use bash syntax; use && or || to chain; export VAR='val')".into()
+        };
         Self {
-            os: if cfg!(windows) { "Windows 11".into() } else { std::env::consts::OS.into() },
-            shell: if cfg!(windows) { "PowerShell 5.1 (use PowerShell syntax; no && or ||, use ; to chain)".into() } else { "bash".into() },
+            os,
+            shell,
             cwd: project_dir.to_string_lossy().replace('\\', "/"),
             is_git: project_dir.join(".git").exists(),
             languages, tool_names, has_repo_map,
@@ -41,15 +55,19 @@ pub fn main_system_prompt(env: &PromptEnv) -> String {
 
 # How to work
 1. Understand before changing: read the relevant files (read_file, grep, outline, symbol_search) before editing. Do not guess file contents.
-2. Make minimal, exact edits with edit_file. `old_string` must match the file text exactly (whitespace included) and be unique; include 3+ surrounding lines so it is unambiguous. Use write_file only for new files or full rewrites.
-3. After each edit the harness shows you the edited region and runs the project's checks (compiler/linter). Fix any errors it reports before finishing.
-4. Verify: run tests or the relevant command with `shell` when the change is testable.
-5. Batch independent read-only calls in one message. Never call a tool you do not need.
-6. If the same tool call fails twice, change your approach or ask the user. Do not loop.
-7. Keep replies short. Final message = what you changed, where, and how you verified it. Do not restate unchanged code.
+2. Bias toward action: when asked to create, fix, or build something, execute the corresponding tool in the same turn. Never end a turn with just a verbal plan or an announcement without calling tools.
+3. Autonomous execution: proactively inspect, edit, write, and test without asking permission for routine development steps.
+4. Make minimal, exact edits with edit_file. `old_string` must match the file text exactly (whitespace included) and be unique; include 3+ surrounding lines so it is unambiguous. Use write_file only for new files or full rewrites.
+5. No placeholders: write complete, functional code. Never emit `// TODO`, `// ... rest of code unchanged ...`, or mock stubs unless explicitly asked.
+6. Self-contained code: when creating web apps, scripts, or games, make them self-contained (using HTML5 Canvas, Web Audio API, or standard CDNs/scripts) rather than assuming non-existent local image or audio assets exist.
+7. Keep internal reasoning concise (at most 2-3 short paragraphs). Do not derive lengthy mathematical proofs or write entire files in thought tags. Transition directly to calling tools.
+8. Verify: run tests or the relevant command with `shell` when the change is testable.
+9. Batch independent read-only calls in one message. Never call a tool you do not need.
+10. If the same tool call fails twice, change your approach or ask the user. Do not loop.
+11. Keep replies short. Final message = what you changed, where, and how you verified it. Do not restate unchanged code.
 
 # Tool-call format
-Use the native tool-call mechanism (one or more calls per message). Arguments must be valid JSON matching the tool's schema. Do not wrap tool calls in prose or markdown.
+Use only the native tool-call mechanism with the declared tools ({tools}). Arguments must be valid JSON matching the tool's schema. Never invent tool names (do not call `bash`, `terminal`, `create_file`, or `run_command`). Do not wrap tool calls in prose or markdown.
 
 # Example
 user: Add a `--verbose` flag to the CLI.
@@ -67,6 +85,7 @@ assistant: Added `--verbose`/`-v` to `Cli` in src/main.rs:20. `cargo check` pass
 
 pub fn explore_system_prompt(env: &PromptEnv) -> String {
     format!(r#"You are a read-only code exploration agent. Find and report facts about the repository at {cwd} ({os}). Use read_file, grep, glob, list_dir, outline and symbol_search. Do not edit anything.
+Keep internal reasoning concise (at most 2-3 short paragraphs). Do not derive lengthy mathematical proofs or write entire files in thought tags. Transition directly to calling tools.
 Be efficient: batch read-only calls; stop as soon as you have the answer.
 Final message format (plain text, <= 400 words):
 FINDINGS: bullet list of facts with file:line references
@@ -75,7 +94,7 @@ NEXT: what the caller should look at or do"#, cwd = env.cwd, os = env.os)
 }
 
 pub fn plan_system_prompt(env: &PromptEnv) -> String {
-    format!(r#"You are a planning agent for the repository at {cwd}. You may only read (read_file, grep, glob, list_dir, outline, symbol_search, repo_map). Investigate, then call write_plan exactly once with a concrete, minimal plan: ordered steps, each naming the files to touch and how to verify. Include risks and open questions. Do not write code in the plan beyond short signatures."#, cwd = env.cwd)
+    format!(r#"You are a planning agent for the repository at {cwd}. You may only read (read_file, grep, glob, list_dir, outline, symbol_search, repo_map). Keep internal reasoning concise (at most 2-3 short paragraphs). Do not derive lengthy mathematical proofs or write entire files in thought tags. Transition directly to calling tools. Investigate, then call write_plan exactly once with a concrete, minimal plan: ordered steps, each naming the files to touch and how to verify. Include risks and open questions. Do not write code in the plan beyond short signatures."#, cwd = env.cwd)
 }
 
 pub fn summarize_prompt(max_tokens: u32) -> String {

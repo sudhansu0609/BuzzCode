@@ -26,7 +26,7 @@ impl SubagentKind {
     pub fn task_class(self) -> TaskClass {
         match self { SubagentKind::Explore => TaskClass::Explore, SubagentKind::Plan => TaskClass::Plan, SubagentKind::General => TaskClass::Chat }
     }
-    pub fn max_turns(self) -> u32 { match self { SubagentKind::Explore => 15, SubagentKind::Plan => 20, SubagentKind::General => 25 } }
+    pub fn max_turns(self) -> u32 { 0 }
 }
 
 /// Everything needed to create a subagent's frozen prefix + registry.
@@ -56,7 +56,8 @@ impl SubagentFactory {
         prefix.system_tokens = self.session.counter.count(&prefix.system.content).await;
         prefix.tools_tokens = self.session.counter.count(&serde_json::to_string(&*prefix.tools_json).unwrap_or_default()).await;
         let ctx = ContextStore::new(prefix, n_ctx, self.session.counter.clone());
-        let mut agent = Agent::new(self.session.clone(), ctx, registry, kind.task_class(), kind.max_turns());
+        let max_turns = self.session.cfg.general.max_turns;
+        let mut agent = Agent::new(self.session.clone(), ctx, registry, kind.task_class(), max_turns);
         agent.quiet = true;
         Ok(agent)
     }

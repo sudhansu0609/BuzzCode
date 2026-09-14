@@ -12,8 +12,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     let input_h = (app.input.line_count() as u16).clamp(1, 10) + 2;
     // transcript / input / status bar (bottom row)
     let chunks = Layout::vertical([Constraint::Min(3), Constraint::Length(input_h), Constraint::Length(1)]).split(area);
-    if app.show_factory && area.width >= 90 {
-        let cols = Layout::horizontal([Constraint::Min(50), Constraint::Length(38)]).split(chunks[0]);
+    if app.show_factory && area.width >= 80 {
+        let panel_w = if area.width >= 110 { 38 } else { 32 };
+        let cols = Layout::horizontal([Constraint::Min(40), Constraint::Length(panel_w)]).split(chunks[0]);
         draw_transcript(f, app, cols[0]);
         crate::factory::draw(f, cols[1], &app.factory, app.spinner / 8);
     } else {
@@ -55,7 +56,7 @@ fn draw_transcript(f: &mut Frame, app: &mut App, area: Rect) {
     let visible: Vec<Line> = all[start..end].to_vec();
     f.render_widget(Paragraph::new(visible), area);
     if app.scroll_from_bottom > 0 {
-        let tag = format!(" ↓ {} more lines (PgDn / Ctrl+End) ", app.scroll_from_bottom);
+        let tag = format!(" ↓ {} more lines (PgDn / Esc to return) ", app.scroll_from_bottom);
         let w = tag.len() as u16;
         let r = Rect { x: area.right().saturating_sub(w + 1), y: area.bottom().saturating_sub(1), width: w, height: 1 };
         f.render_widget(Paragraph::new(tag).style(Style::default().bg(Color::DarkGray).fg(Color::White)), r);
@@ -77,10 +78,10 @@ fn draw_status(f: &mut Frame, app: &App, area: Rect) {
     // Speed: live rate while generating, otherwise the last server-measured rate; session average in parens.
     let tps_span = match (app.busy, s.live_tps()) {
         (true, Some(t)) => Span::styled(format!("⚡ {t:.1} tok/s"), Style::default().fg(Color::LightGreen).add_modifier(Modifier::BOLD)),
-        (true, None) if s.gen_start.is_none() => Span::styled(format!("⏳ prefill… {}", s.turn_start.map(|t| format!("{:.1}s", t.elapsed().as_secs_f64())).unwrap_or_default()), Style::default().fg(Color::Yellow)),
-        (true, None) => Span::styled("⚡ … tok/s", Style::default().fg(Color::LightGreen)),
-        (false, _) if s.decode_tps > 0.0 => Span::styled(format!("⚡ {:.1} tok/s", s.decode_tps), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
-        _ => Span::styled("⚡ – tok/s", Style::default().fg(Color::DarkGray)),
+        (true, None) if s.gen_start.is_none() => Span::styled(format!("prefill… {}", s.turn_start.map(|t| format!("{:.1}s", t.elapsed().as_secs_f64())).unwrap_or_default()), Style::default().fg(Color::Yellow)),
+        (true, None) => Span::styled("… tok/s", Style::default().fg(Color::LightGreen)),
+        (false, _) if s.decode_tps > 0.0 => Span::styled(format!("{:.1} tok/s", s.decode_tps), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+        _ => Span::styled("– tok/s", Style::default().fg(Color::DarkGray)),
     };
     let mut spans = vec![
         Span::styled(busy, Style::default().fg(Color::Cyan)),
@@ -89,13 +90,20 @@ fn draw_status(f: &mut Frame, app: &App, area: Rect) {
         Span::raw(" │ "),
         tps_span,
     ];
-    if let Some(avg) = s.session_avg_tps() { spans.push(Span::styled(format!(" (avg {avg:.0})"), Style::default().fg(Color::DarkGray))); }
+    if area.width >= 125 {
+        if let Some(avg) = s.session_avg_tps() { spans.push(Span::styled(format!(" (avg {avg:.0})"), Style::default().fg(Color::DarkGray))); }
+    }
     spans.push(Span::raw(" │ ctx "));
     spans.push(Span::styled(format!("{}/{} ({pct:.0}%)", fmt_k(s.ctx_used), fmt_k(s.ctx_total)), Style::default().fg(ctx_color)));
-    spans.push(Span::raw(format!(" │ cache {:.0}% │ prompt {:.0}ms", s.cache_ratio * 100.0, s.prompt_ms)));
-    if let Some(m) = s.mtp { spans.push(Span::raw(format!(" │ mtp {:.0}%", m * 100.0))); }
+    if area.width >= 110 {
+        spans.push(Span::raw(format!(" │ cache {:.0}% │ prompt {:.0}ms", s.cache_ratio * 100.0, s.prompt_ms)));
+    }
+    if area.width >= 135 {
+        if let Some(m) = s.mtp { spans.push(Span::raw(format!(" │ mtp {:.0}%", m * 100.0))); }
+    }
     let effort_display = if s.effort == "xhigh" { "high" } else { &s.effort };
-    spans.push(Span::raw(format!(" │ {mode} │ effort {effort_display} │ turn {}/{}", s.turn, s.max_turns)));
+    let turn_display = if s.max_turns == 0 { format!("turn {}", s.turn) } else { format!("turn {}/{}", s.turn, s.max_turns) };
+    spans.push(Span::raw(format!(" │ {mode} │ {effort_display} │ {turn_display}")));
     if let Some((msg, _)) = &app.flash { spans.push(Span::styled(format!("  ◆ {msg}"), Style::default().fg(Color::Magenta))); }
     f.render_widget(Paragraph::new(Line::from(spans)).style(Style::default().bg(Color::Rgb(30, 30, 40))), area);
 }
@@ -144,7 +152,8 @@ fn draw_help(f: &mut Frame, area: Rect) {
         "Keys",
         "  Enter            send     Shift/Alt/Ctrl+Enter or '\\' newline",
         "  Ctrl+C           abort generation (twice to quit)   Ctrl+D quit",
-        "  PgUp/PgDn        scroll   Ctrl+End  jump to bottom",
+        "  PgUp/PgDn / Shift+↑↓  scroll transcript (Esc returns to prompt)",
+        "  Ctrl+Home/End    jump to top / bottom",
         "  Ctrl+T           toggle reasoning display",
         "  Ctrl+O           expand/collapse last tool output",
         "  F1 help   F2 engine log   F3 factory panel   ↑/↓ input history",

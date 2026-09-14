@@ -67,12 +67,13 @@ impl LoopGuard {
 
     pub fn next_turn(&mut self) -> Result<(), GuardError> {
         self.turn += 1;
-        if self.turn >= self.max_turns { return Err(GuardError::MaxTurns(self.max_turns)); }
+        if self.max_turns > 0 && self.turn >= self.max_turns { return Err(GuardError::MaxTurns(self.max_turns)); }
         Ok(())
     }
 
-    /// Called when the user sends a new message: repetition history resets, turn budget continues.
+    /// Called when the user sends a new message: repetition history and turn counter reset for the new request.
     pub fn new_user_message(&mut self) {
+        self.turn = 0;
         self.recent_calls.clear();
         self.recent_errors.clear();
         self.recent_texts.clear();

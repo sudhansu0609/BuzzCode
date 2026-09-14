@@ -8,7 +8,7 @@ use crate::vram::{estimate_decode_tps, VramPlan};
 use crate::{discover, nvidia};
 use cb_config::{Config, Profile};
 use serde::Serialize;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 const GIB: f64 = (1u64 << 30) as f64;
 /// GPU memory bandwidth used for speed estimates (GB/s). RTX 5060 Ti ≈ 448.
@@ -63,13 +63,13 @@ impl Candidate {
 }
 
 fn base_profile(name: &str, spec: &str, has_mtp: bool) -> Profile {
-    let stem = Path::new(name).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| name.to_string());
+    let stem = name.strip_suffix(".gguf").unwrap_or(name);
     let is_gemma = stem.to_ascii_lowercase().contains("gemma");
     let is_flash = stem.to_ascii_lowercase().contains("flash") || stem.to_ascii_lowercase().contains("qwen4");
     Profile {
-        name: stem.to_ascii_lowercase().replace(['.', ' '], "-"),
+        name: stem.to_ascii_lowercase().replace(['.', ' ', ':'], "-"),
         model: spec.to_string(),
-        alias: stem,
+        alias: stem.to_string(),
         spec: if has_mtp { "draft-mtp".into() } else { "none".into() },
         reasoning_format: if is_gemma { "none".into() } else { "deepseek".into() },
         ctx: if is_flash { 65536 } else if is_gemma { 32768 } else { 65536 },
@@ -119,6 +119,7 @@ fn evaluate(cfg: &Config, gpu: &GpuInfo, name: &str, source: Source, size_bytes:
 fn estimate_params(f: &ModelFacts) -> u64 { f.active_params() }
 
 /// Synthetic facts for a downloadable quant: scale a local reference's tensor sizes by file size.
+#[allow(dead_code)]
 fn scaled_facts(reference: &ModelFacts, size_bytes: u64, quant_label: &str) -> ModelFacts {
     let ratio = size_bytes as f64 / reference.total_bytes.max(1) as f64;
     let mut f = reference.clone();
@@ -132,87 +133,84 @@ fn scaled_facts(reference: &ModelFacts, size_bytes: u64, quant_label: &str) -> M
     f
 }
 
+#[allow(dead_code)]
 fn quant_from_name(file: &str) -> String {
     let stem = file.trim_end_matches(".gguf");
     stem.rsplit("-UD-").next().map(str::to_string).unwrap_or_else(|| stem.rsplit('-').next().unwrap_or(stem).to_string())
 }
 
-/// Build the ranked candidate list. Local files are inspected; downloadables are estimated from a
-/// local Qwen3.8 reference when one exists.
+/// Build the ranked candidate list of available downloaded models (from LM Studio, Ollama, and models_dir).
 pub fn recommend(cfg: &Config) -> anyhow::Result<(GpuInfo, Vec<Candidate>)> {
     let gpu = nvidia::query()?;
     let mut out: Vec<Candidate> = Vec::new();
-    let mut reference: Option<ModelFacts> = None;
-    let mut local_names: Vec<String> = Vec::new();
 
-    for (path, size) in discover::list_local_models(cfg) {
-        let fname = path.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
-        let fl = fname.to_ascii_lowercase();
+    for m in discover::discover_all_available_models(cfg) {
+        let fl = m.display_name.to_ascii_lowercase();
         // Ignore multimodal projectors, standalone MTP draft modules, and non-base shards
         if fl.contains("mmproj") || fl.starts_with("mtp-") || fl.contains("-mtp-") { continue; }
-        // Split shards: evaluate only the first.
-        if fname.contains("-of-") && !fname.contains("-00001-of-") { continue; }
-        let facts = GgufFile::open(&discover::first_shard(&path)).ok().map(|g| g.facts());
+        if m.display_name.contains("-of-") && !m.display_name.contains("-00001-of-") { continue; }
+
+        let facts = GgufFile::open(&discover::first_shard(&m.path)).ok().map(|g| g.facts());
         // If file has no layer weights, it is an adapter or draft-only tensor file, not a standalone model
         if facts.as_ref().map(|f| f.layer_bytes.is_empty() || f.layer_bytes.iter().all(|&b| b == 0)).unwrap_or(false) {
             continue;
         }
-        if let Some(f) = &facts {
-            if reference.is_none() && f.n_layer > 0 && !f.layer_bytes.is_empty() {
-                reference = Some(f.clone());
-            }
-        }
-        let mut prof = base_profile(&fname, &path.to_string_lossy(), facts.as_ref().map(|f| f.has_mtp).unwrap_or(false));
-        if let Some(p) = cfg.profiles.iter().find(|p| discover::find_model(cfg, &p.model).map(|m| m == path).unwrap_or(false)) { prof = p.clone(); }
-        let total = if fname.contains("-00001-of-") { size * shard_count(&fname).max(1) } else { size };
-        local_names.push(fname.clone());
-        out.push(evaluate(cfg, &gpu, &fname, Source::Local(path.clone()), total, facts.as_ref(), &prof));
-    }
 
-    for (repo, file, gib) in KNOWN_DOWNLOADS {
-        if local_names.iter().any(|n| n == file) { continue; }
-        let size = (*gib * GIB) as u64;
-        let facts = reference.as_ref().map(|r| scaled_facts(r, size, &quant_from_name(file)));
-        let prof = base_profile(file, &format!("{repo}:{file}"), facts.as_ref().map(|f| f.has_mtp).unwrap_or(true));
-        let mut c = evaluate(cfg, &gpu, file, Source::Download { repo: repo.to_string(), file: file.to_string() }, size, facts.as_ref(), &prof);
-        if facts.is_none() {
-            c.note = "download to inspect".into();
-            c.arch = if file.to_ascii_lowercase().contains("qwen4") || file.to_ascii_lowercase().contains("flash") {
-                "qwen4exp".into()
-            } else if file.to_ascii_lowercase().contains("gemma") {
-                "gemma4".into()
-            } else {
-                "qwen35".into()
-            };
-            c.quant = quant_from_name(file);
+        let mut prof = base_profile(&m.display_name, &m.path.to_string_lossy(), facts.as_ref().map(|f| f.has_mtp).unwrap_or(false));
+        prof.alias = m.alias.clone();
+        if let Some(p) = cfg.profiles.iter().find(|p| {
+            discover::find_model(cfg, &p.model).map(|path| path == m.path).unwrap_or(false)
+                || p.alias.eq_ignore_ascii_case(&m.alias)
+                || p.model.eq_ignore_ascii_case(&m.display_name)
+        }) {
+            prof = p.clone();
         }
-        out.push(c);
+
+        let mut cand = evaluate(cfg, &gpu, &m.display_name, Source::Local(m.path.clone()), m.size, facts.as_ref(), &prof);
+        cand.note = format!("{} · {}", cand.note, m.origin);
+        out.push(cand);
     }
 
     out.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
     Ok((gpu, out))
 }
 
-fn shard_count(fname: &str) -> u64 {
-    fname.split("-of-").nth(1).and_then(|s| s.split('.').next()).and_then(|s| s.parse().ok()).unwrap_or(1)
-}
-
 /// Profile to use for a candidate (existing configured profile if any, else an ad-hoc one).
 pub fn profile_for(cfg: &Config, c: &Candidate) -> Profile {
     if let Some(name) = &c.profile { if let Some(p) = cfg.profile(name) { return p.clone(); } }
     let mut p = base_profile(&c.name, &c.model_spec(), c.has_mtp);
+    p.alias = c.name.clone();
     if let Some(plan) = &c.plan { p.ctx = plan.n_ctx.max(p.ctx_min); }
     p
 }
 
-/// Resolve a user selection: 1-based index, profile name, file name fragment, or path.
+/// Resolve a user selection: 1-based index, profile name, model name, alias, or path.
 pub fn select<'a>(cands: &'a [Candidate], cfg: &Config, sel: &str) -> Option<&'a Candidate> {
     let sel = sel.trim();
     if let Ok(i) = sel.parse::<usize>() { return cands.get(i.wrapping_sub(1)); }
-    if let Some(p) = cfg.profile(sel) { if let Some(c) = cands.iter().find(|c| c.profile.as_deref() == Some(&p.name)) { return Some(c); } }
+    if let Some(p) = cfg.profile(sel) {
+        if let Some(c) = cands.iter().find(|c| c.profile.as_deref() == Some(&p.name) || c.name.eq_ignore_ascii_case(&p.alias) || c.name.eq_ignore_ascii_case(&p.model)) {
+            return Some(c);
+        }
+    }
     let l = sel.to_ascii_lowercase();
-    cands.iter().find(|c| c.name.eq_ignore_ascii_case(sel) || c.model_spec().eq_ignore_ascii_case(sel))
-        .or_else(|| cands.iter().find(|c| c.name.to_ascii_lowercase().contains(&l) || c.profile.as_deref().map(|p| p.contains(&l)).unwrap_or(false)))
+    // 1. Exact match on candidate name, model_spec, or alias
+    if let Some(c) = cands.iter().find(|c| c.name.eq_ignore_ascii_case(sel) || c.model_spec().eq_ignore_ascii_case(sel)) {
+        return Some(c);
+    }
+    // 2. Tag / stem match (e.g. "qwen3.5" matches "qwen3.5:9b", "gemma-4-12b" matches "gemma-4-12B-it-Q4_K_M.gguf")
+    if let Some(c) = cands.iter().find(|c| {
+        c.name.split(':').next().map(|prefix| prefix.eq_ignore_ascii_case(sel)).unwrap_or(false)
+            || c.name.strip_suffix(".gguf").map(|s| s.eq_ignore_ascii_case(sel)).unwrap_or(false)
+    }) {
+        return Some(c);
+    }
+    // 3. Substring match
+    cands.iter().find(|c| {
+        c.name.to_ascii_lowercase().contains(&l)
+            || c.profile.as_deref().map(|p| p.to_ascii_lowercase().contains(&l)).unwrap_or(false)
+            || c.model_spec().to_ascii_lowercase().contains(&l)
+    })
 }
 
 /// Render the table (plain text, used by CLI and TUI).
@@ -221,17 +219,17 @@ pub fn render_table(gpu: &GpuInfo, cands: &[Candidate], current: Option<&str>) -
     s.push_str(&format!("{:>3} {:<44} {:>7} {:>6} {:>5} {:>9} {:>4}  {}\n", "#", "model", "params", "size", "bpw", "est tok/s", "mtp", "fit / note"));
     for (i, c) in cands.iter().enumerate() {
         let star = if i == 0 { "★" } else { " " };
-        let cur = if current.map(|n| c.profile.as_deref() == Some(n) || c.name == n).unwrap_or(false) { "◀ current" } else { "" };
-        let where_ = if c.is_local() { "" } else { " (download)" };
+        let cur = if current.map(|n| c.profile.as_deref() == Some(n) || c.name.eq_ignore_ascii_case(n) || c.model_spec().ends_with(n)).unwrap_or(false) { " ◀ current" } else { "" };
         s.push_str(&format!("{star}{:>2} {:<44} {:>6.1}B {:>5.1}G {:>5.1} {:>9.0} {:>4}  {}{} {}\n",
             i + 1, truncate(&c.name, 44), c.params_b, c.size_gib(), c.bpw, c.est_tps, if c.has_mtp { "yes" } else { "no" },
-            if c.fits_gpu { "✓ " } else { "⚠ " }, format!("{}{where_}", c.note), cur));
+            if c.fits_gpu { "✓ " } else { "⚠ " }, c.note, cur));
     }
     s.push_str("est tok/s = bandwidth model (≈ measured for Qwen3.8); KV for non-hybrid models is estimated conservatively.\n");
     if let Some(best) = cands.first() {
-        s.push_str(&format!("\n★ recommended: {} — {} at ~{:.0} tok/s{}\n", best.name, best.note, best.est_tps, if best.is_local() { "" } else { " (will be downloaded)" }));
+        s.push_str(&format!("\n★ recommended: {} — {} at ~{:.0} tok/s\n", best.name, best.note, best.est_tps));
     }
     s
 }
 
 fn truncate(s: &str, n: usize) -> String { if s.len() <= n { s.to_string() } else { format!("{}…", &s[..n - 1]) } }
+

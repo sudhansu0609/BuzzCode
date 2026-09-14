@@ -15,6 +15,11 @@ pub enum ModelsCmd {
 
 pub fn list(cfg: &Config) -> Result<()> {
     let (gpu, cands) = catalog::recommend(cfg)?;
+    if cands.is_empty() {
+        println!("no downloaded models found in LM Studio (~/.lmstudio/models), Ollama (~/.ollama/models), or models_dir ({})", cfg.engine.models_dir);
+        println!("download a model in LM Studio or run `ollama pull <model>` first.");
+        return Ok(());
+    }
     print!("{}", catalog::render_table(&gpu, &cands, Some(&cfg.general.default_profile)));
     println!("\nswitch: `buzzcode models use <#|name>` · auto: `buzzcode models auto` · one-off: `buzzcode --model <#|name>`");
     Ok(())

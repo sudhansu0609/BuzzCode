@@ -212,14 +212,14 @@ fn title_case(s: &str) -> String {
 
 /// The "factory floor" side panel showing subagents and live tools with progress.
 pub fn draw(f: &mut Frame, area: Rect, factory: &Factory, frame: usize) {
-    let block = Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::DarkGray)).title(" 🏭 factory floor ");
+    let block = Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::DarkGray)).title(" [factory floor] ");
     let inner = block.inner(area);
     f.render_widget(block, area);
     let w = inner.width as usize;
     let mut lines: Vec<Line> = Vec::new();
     let task = if factory.big_task.is_empty() { "no job yet — type a task".to_string() } else { factory.big_task.clone() };
     lines.push(Line::from(vec![
-        Span::styled("🎯 MISSION", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        Span::styled("MISSION", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
     ]));
     for piece in textwrap::wrap(&task, w.max(8)).into_iter().take(2) {
         lines.push(Line::from(Span::styled(piece.into_owned(), Style::default().fg(Color::White))));
@@ -228,7 +228,7 @@ pub fn draw(f: &mut Frame, area: Rect, factory: &Factory, frame: usize) {
 
     // 1. SUBAGENTS & WORKERS SECTION
     lines.push(Line::from(vec![
-        Span::styled("🤖 AGENTS & WORKERS", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled("AGENTS & WORKERS", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
         Span::styled(format!(" ({})", factory.workers.len()), Style::default().fg(Color::DarkGray)),
     ]));
 

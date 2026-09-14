@@ -90,7 +90,17 @@ pub fn alive(pid: u32) -> bool {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+pub fn alive(pid: u32) -> bool {
+    // macOS has no /proc. Use kill -0 to probe process existence safely without signaling.
+    std::process::Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+#[cfg(all(not(windows), not(target_os = "macos")))]
 pub fn alive(pid: u32) -> bool {
     std::path::Path::new(&format!("/proc/{pid}")).exists()
 }

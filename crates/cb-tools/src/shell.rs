@@ -32,7 +32,11 @@ pub fn shell_program() -> (&'static str, Vec<&'static str>) {
     if cfg!(windows) {
         if which("pwsh").is_some() { ("pwsh", vec!["-NoProfile", "-NonInteractive", "-Command"]) }
         else { ("powershell", vec!["-NoProfile", "-NonInteractive", "-Command"]) }
-    } else { ("sh", vec!["-c"]) }
+    } else if cfg!(target_os = "macos") {
+        ("zsh", vec!["-c"])
+    } else {
+        ("sh", vec!["-c"])
+    }
 }
 
 fn which(name: &str) -> Option<std::path::PathBuf> {
@@ -113,6 +117,10 @@ async fn kill_tree(child: &mut tokio::process::Child, pid: Option<u32>) {
     #[cfg(windows)]
     if let Some(pid) = pid {
         let _ = tokio::process::Command::new("taskkill").args(["/PID", &pid.to_string(), "/T", "/F"]).stdout(Stdio::null()).stderr(Stdio::null()).status().await;
+    }
+    #[cfg(not(windows))]
+    if let Some(pid) = pid {
+        let _ = tokio::process::Command::new("kill").args(["-9", &pid.to_string()]).stdout(Stdio::null()).stderr(Stdio::null()).status().await;
     }
     let _ = child.start_kill();
     let _ = tokio::time::timeout(Duration::from_secs(3), child.wait()).await;

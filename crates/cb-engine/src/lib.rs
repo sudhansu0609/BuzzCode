@@ -7,6 +7,7 @@ pub mod client;
 pub mod discover;
 pub mod download;
 pub mod gguf;
+pub mod gpu;
 pub mod manager;
 pub mod nvidia;
 pub mod pidfile;
